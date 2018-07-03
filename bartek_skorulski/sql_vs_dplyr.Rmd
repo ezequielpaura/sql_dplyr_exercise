@@ -19,14 +19,13 @@ sql_con <- dbConnect(
   SQLite(), 
   dbname=file.path(DATA_DIR, "database.sqlite")
 )
-dbListTables(sql_con)
+dbListTables(sql_con)+
 ```
-
 Example of query:
 ```{r}
 dbGetQuery(sql_con, "
 SELECT *
-FROM Player
+FROM League
 LIMIT 6
 ")
 ```
@@ -287,6 +286,13 @@ FROM Match" %>%
 
 
 ```{r}
+match_db %>% 
+  count(1) %>% 
+  select(n)
+```
+
+
+```{r}
 "SELECT country_id
 ,   COUNT(1) AS n
 FROM Match
@@ -294,6 +300,15 @@ GROUP BY country_id
 ORDER BY n DESC" %>%
   dbGetQuery(sql_con, .)
 ```
+```{r}
+match_db %>% 
+  select(country_id) %>% 
+   group_by(country_id) %>% 
+  count(1)%>% arrange(-n)
+  
+```
+
+
 
 ```{r}
 match_db <- tbl_df(dbGetQuery(sql_con,"SELECT * FROM Match"))
@@ -311,12 +326,75 @@ match_db %>%
   arrange(desc(teams))
 ```
 
-* List 5 players and their highest rating that had the lowest potential ever.
+* List 5 players and their highest rating that had the lowest rating ever.
+```{r}
+player_db %>%
+  left_join(
+    {player_attributes_db %>% 
+      group_by(player_api_id) %>%
+      summarise(min_rating=min(overall_rating, na.rm=TRUE), max_rating=max(overall_rating, na.rm=TRUE))}, 
+    by='player_api_id') %>%
+  arrange(min_rating) %>%
+  select(player_name, max_rating) %>%
+  head(5)
+
+```
 
 * Which team has the higest average of goles when playing home in season 2008/2009 in Poland?
+```{r}
+match_db %>%
+  left_join(country_db, by=c("country_id" = "id"))%>%
+    filter(season == '2008/2009', name == "Poland")%>%
+    select(home_team_goal,home_team_api_id )%>%
+    group_by(home_team_api_id)%>%
+    summarise(mean=mean(home_team_goal))%>%
+    arrange(-mean)%>%
+    head(1)%>%
+  left_join(teams, by=c("home_team_api_id" = "team_api_id")) %>%
+    select(team_long_name)
+```
+
+
+```{r}
+
+season <-"2008/2009"
+country<-"Poland"
+
+match_db %>%
+  left_join(country_db, by=c('country_id' = 'id'))%>%
+    filter(season == season, name == country)%>%
+    select(home_team_goal,home_team_api_id )%>%
+    group_by(home_team_api_id)%>%
+    summarise(mean=mean(home_team_goal))%>%
+    arrange(-mean)%>%
+    head(1)%>%
+  left_join(teams, by=c('home_team_api_id' = 'team_api_id')) %>%
+    select(team_long_name)
+
+```
 
 * Which team and from which country and which season scored the higest number of goals?
+```{r}
+union_all({
+match_db %>%
+    group_by(away_team_api_id)%>%
+ summarise(sum(away_team_goal))},
+           {match_db %>%
+    group_by(home_team_api_id)%>%
+ summarise(sum(home_team_goal))})
+```
 
+
+
+
+```{r}
+
+match_db %>%
+    group_by(away_team_api_id)%>%
+ summarise(goals_away=sum(away_team_goal)) %>% 
+  left_join(match_db, by = c("away_team_api_id", "home_team_api_id"))
+
+```
 ## Whisker
 
 <https://github.com/edwindj/whisker>
